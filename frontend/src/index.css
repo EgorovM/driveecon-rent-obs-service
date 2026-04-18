@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply min-h-screen text-ink-900 antialiased bg-mesh-page bg-fixed;
+    font-feature-settings: "ss01" on, "cv01" on;
+  }
+
+  ::selection {
+    @apply bg-brand-200/80 text-ink-900;
+  }
+}
+
+@layer components {
+  .page-container {
+    @apply max-w-5xl w-full mx-auto px-4 sm:px-6;
+  }
+
+  .card-elevated {
+    @apply rounded-2xl bg-surface-card border border-ink-900/[0.06] shadow-soft;
+  }
+
+  .input-field {
+    @apply w-full rounded-xl border border-ink-900/10 bg-white/90 px-4 py-2.5 text-sm text-ink-900
+      shadow-inner shadow-ink-900/[0.02]
+      transition-[border-color,box-shadow] duration-200
+      placeholder:text-ink-400
+      focus:border-brand-500/50 focus:outline-none focus:ring-2 focus:ring-brand-500/20;
+  }
+
+  .label {
+    @apply block text-xs font-semibold uppercase tracking-wider text-ink-500 mb-1.5;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white
+      bg-gradient-to-br from-brand-500 to-brand-600 shadow-md shadow-brand-600/25
+      transition-all duration-200
+      hover:from-brand-400 hover:to-brand-500 hover:shadow-lg hover:shadow-brand-600/30 hover:-translate-y-0.5
+      active:translate-y-0 active:shadow-md;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-ink-800
+      bg-ink-900/[0.04] border border-ink-900/10
+      transition-all duration-200
+      hover:bg-ink-900/[0.07] hover:border-ink-900/15;
+  }
+
+  .btn-dark {
+    @apply w-full rounded-xl py-3 text-sm font-semibold text-white
+      bg-gradient-to-br from-ink-800 to-ink-900 shadow-md shadow-ink-900/20
+      transition-all duration-200
+      hover:from-ink-700 hover:to-ink-800 hover:shadow-lg;
+  }
+
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+}

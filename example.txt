@@ -1,0 +1,4 @@
+tenant_name = Петров Сергей
+email: sergey@yandex.ru
+rent_start: 2026-04-01
+Дата окончания: 2026-09-30
