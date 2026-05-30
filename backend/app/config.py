@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     smtp_debug: bool = False
     frontend_url: str = "http://localhost:5173"
     api_public_url: str = "http://localhost:8000"
+    # Засеять демо-объекты заказчика при пустой БД (для быстрого старта).
+    seed_on_start: bool = True
+    # Наполнить БД исторической демо-ареной за 2024–2026 (договоры + начисления).
+    seed_history: bool = False
+    # Владелец объектов по умолчанию (см. DATA.md).
+    owner_email: str = "ilpk7778@mail.ru"
 
     @field_validator("smtp_pass", mode="before")
     @classmethod

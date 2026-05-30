@@ -14,38 +14,48 @@ def _parse_date(s: str) -> date | None:
     return None
 
 
+def _parse_int(s: str) -> int | None:
+    digits = re.sub(r"[^\d]", "", s)
+    return int(digits) if digits else None
+
+
 def parse_lease_txt(content: str) -> dict:
     """
-    Ожидает строки вида: ФИО / Email / даты начала и окончания.
+    Разбирает параметры аренды из .txt: ФИО, Email, даты, сумма аренды, день оплаты.
     Гибкий разбор ключевых слов на русском и английском.
     """
     lines = [ln.strip() for ln in content.splitlines() if ln.strip()]
     data: dict = {}
     for line in lines:
-        low = line.lower()
         if ":" in line:
             key, val = line.split(":", 1)
-            key, val = key.strip().lower(), val.strip()
         elif "=" in line:
             key, val = line.split("=", 1)
-            key, val = key.strip().lower(), val.strip()
         else:
             continue
+        key, val = key.strip().lower(), val.strip()
 
-        if any(x in key for x in ("фио", "name", "tenant")):
+        if any(x in key for x in ("фио", "name", "tenant", "арендатор")):
             data["tenant_name"] = val
         elif "email" in key or "почт" in key:
             data["tenant_email"] = val
-        elif any(x in key for x in ("начал", "start", "от", "дата аренды")):
+        elif any(x in key for x in ("сумма", "amount", "плата", "стоимост")):
+            n = _parse_int(val)
+            if n:
+                data["rent_amount"] = n
+        elif any(x in key for x in ("день оплаты", "число", "payment_day", "расчетн", "расчётн")):
+            n = _parse_int(val)
+            if n and 1 <= n <= 31:
+                data["payment_day"] = n
+        elif any(x in key for x in ("начал", "start", "дата аренды")):
             d = _parse_date(val)
             if d:
                 data["rent_start"] = d
-        elif any(x in key for x in ("оконч", "конец", "end", "срок", "до")):
+        elif any(x in key for x in ("оконч", "конец", "end", "срок", "по ")):
             d = _parse_date(val)
             if d:
                 data["rent_end"] = d
 
-    # Fallback: первое похожее на email (явно включаем _ в локальной части, без двусмысленных диапазонов в [])
     email_pattern = r"[a-zA-Z0-9._+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
     if "tenant_email" not in data:
         m = re.search(email_pattern, content, re.IGNORECASE)
@@ -69,9 +79,21 @@ def parse_lease_txt(content: str) -> dict:
     elif len(dates_found) == 1:
         data.setdefault("rent_end", dates_found[0])
 
-    missing = [k for k in ("tenant_name", "tenant_email", "rent_start", "rent_end") if k not in data]
+    missing = [
+        k
+        for k in ("tenant_name", "tenant_email", "rent_start", "rent_end", "rent_amount", "payment_day")
+        if k not in data
+    ]
     if missing:
-        raise ValueError(f"Не удалось разобрать поля: {', '.join(missing)}")
+        labels = {
+            "tenant_name": "ФИО",
+            "tenant_email": "Email",
+            "rent_start": "дата начала",
+            "rent_end": "дата окончания",
+            "rent_amount": "сумма аренды",
+            "payment_day": "день оплаты",
+        }
+        raise ValueError("Не удалось разобрать поля: " + ", ".join(labels[k] for k in missing))
 
     try:
         TypeAdapter(EmailStr).validate_python(data["tenant_email"])
@@ -83,4 +105,6 @@ def parse_lease_txt(content: str) -> dict:
         "tenant_email": str(data["tenant_email"]),
         "rent_start": data["rent_start"],
         "rent_end": data["rent_end"],
+        "rent_amount": int(data["rent_amount"]),
+        "payment_day": int(data["payment_day"]),
     }

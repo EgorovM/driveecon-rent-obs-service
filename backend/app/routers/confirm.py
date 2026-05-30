@@ -1,12 +1,12 @@
 import re
-import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.mail import send_owner_paid
-from app.models import Lease, PaymentStatus, Property
+from app.mail import month_label, send_owner_paid
+from app.models import PeriodStatus, RentPeriod
 from app.schemas import ConfirmBody, ConfirmOut, MessageOut
 
 router = APIRouter(tags=["confirm"])
@@ -20,28 +20,37 @@ def _validate_confirmation_text(text: str) -> bool:
     return bool(ok)
 
 
+def _get_period(db: Session, token: str) -> RentPeriod:
+    period = db.query(RentPeriod).filter(RentPeriod.confirmation_token == token).first()
+    if not period:
+        raise HTTPException(404, "Ссылка недействительна")
+    return period
+
+
 @router.get("/api/confirm/{token}", response_model=ConfirmOut)
 def get_confirm_info(token: str, db: Session = Depends(get_db)):
-    lease = db.query(Lease).filter(Lease.confirmation_token == token).first()
-    if not lease:
-        raise HTTPException(404, "Ссылка недействительна")
+    period = _get_period(db, token)
+    lease = period.lease
     prop = lease.property
     return ConfirmOut(
-        lease_id=lease.id,
+        period_id=period.id,
         property_name=prop.name,
         address=prop.address,
         tenant_name=lease.tenant_name,
-        rent_end=lease.rent_end,
+        year=period.year,
+        month=period.month,
+        due_date=period.due_date,
+        amount_due=period.amount_due,
+        amount_paid=period.amount_paid,
+        status=PeriodStatus(period.status),
     )
 
 
 @router.post("/api/confirm/{token}", response_model=MessageOut)
 def post_confirm(token: str, body: ConfirmBody, db: Session = Depends(get_db)):
-    lease = db.query(Lease).filter(Lease.confirmation_token == token).first()
-    if not lease:
-        raise HTTPException(404, "Ссылка недействительна")
-    if lease.payment_status != PaymentStatus.pending.value:
-        raise HTTPException(400, "Оплата уже подтверждена или просрочена")
+    period = _get_period(db, token)
+    if period.status == PeriodStatus.paid.value:
+        raise HTTPException(400, "Оплата за этот период уже подтверждена")
 
     if not _validate_confirmation_text(body.confirmation_text):
         raise HTTPException(
@@ -49,8 +58,11 @@ def post_confirm(token: str, body: ConfirmBody, db: Session = Depends(get_db)):
             "В тексте подтверждения укажите явно, что оплата произведена (например: «оплатил аренду»).",
         )
 
+    lease = period.lease
     prop = lease.property
-    lease.payment_status = PaymentStatus.paid.value
+    period.amount_paid = period.amount_due
+    period.status = PeriodStatus.paid.value
+    period.paid_at = datetime.utcnow()
     db.commit()
 
     send_owner_paid(
@@ -58,6 +70,8 @@ def post_confirm(token: str, body: ConfirmBody, db: Session = Depends(get_db)):
         property_name=prop.name,
         address=prop.address,
         tenant_name=lease.tenant_name,
+        period_label=month_label(period.year, period.month),
+        amount=period.amount_due,
     )
 
     return MessageOut(ok=True, detail="Владелец уведомлён об оплате.")

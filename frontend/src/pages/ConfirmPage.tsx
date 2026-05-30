@@ -5,6 +5,12 @@ import { AlertError, AlertSuccess } from "../components/Alert";
 import { PageLoader } from "../components/PageLoader";
 import type { ConfirmInfo } from "../types";
 
+const MONTHS = [
+  "", "январь", "февраль", "март", "апрель", "май", "июнь",
+  "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
+];
+const money = (n: number) => `${n.toLocaleString("ru-RU")} ₽`;
+
 export function ConfirmPage() {
   const { token } = useParams();
   const [info, setInfo] = useState<ConfirmInfo | null>(null);
@@ -90,8 +96,16 @@ export function ConfirmPage() {
               <span className="font-medium text-ink-800">{info.tenant_name}</span>
             </p>
             <p className="flex gap-2 text-ink-600">
-              <span className="shrink-0 text-ink-400">До</span>
-              <span className="font-medium text-ink-800">{info.rent_end}</span>
+              <span className="shrink-0 text-ink-400">Период</span>
+              <span className="font-medium text-ink-800">{MONTHS[info.month] ?? info.month} {info.year}</span>
+            </p>
+            <p className="flex gap-2 text-ink-600">
+              <span className="shrink-0 text-ink-400">К оплате</span>
+              <span className="font-medium text-ink-800">{money(info.amount_due)}</span>
+            </p>
+            <p className="flex gap-2 text-ink-600">
+              <span className="shrink-0 text-ink-400">Оплатить до</span>
+              <span className="font-medium text-ink-800">{info.due_date}</span>
             </p>
           </div>
         </div>

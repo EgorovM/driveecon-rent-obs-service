@@ -102,20 +102,40 @@ def _send(to_addr: str, subject: str, body_text: str) -> None:
             smtp.close()
 
 
+_MONTHS_RU = [
+    "",
+    "январь", "февраль", "март", "апрель", "май", "июнь",
+    "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
+]
+
+
+def month_label(year: int, month: int) -> str:
+    name = _MONTHS_RU[month] if 1 <= month <= 12 else str(month)
+    return f"{name} {year}"
+
+
+def _money(amount: int) -> str:
+    return f"{amount:,}".replace(",", " ") + " ₽"
+
+
 def send_tenant_payment_reminder(
     *,
     tenant_email: str,
     property_name: str,
     address: str,
-    rent_end_iso: str,
+    period_label: str,
+    amount_due: int,
+    due_date_iso: str,
     confirm_url: str,
 ) -> None:
-    subject = f"Напоминание об оплате аренды: {property_name}"
+    subject = f"Напоминание об оплате аренды: {property_name} ({period_label})"
     body = (
         f"Здравствуйте!\n\n"
-        f"Через 3 дня заканчивается срок аренды по объекту «{property_name}».\n"
+        f"Через 3 дня наступает срок оплаты аренды по объекту «{property_name}».\n"
         f"Адрес: {address}\n"
-        f"Дата окончания аренды: {rent_end_iso}\n\n"
+        f"Период: {period_label}\n"
+        f"Сумма к оплате: {_money(amount_due)}\n"
+        f"Оплатить до: {due_date_iso}\n\n"
         f"Пожалуйста, подтвердите оплату по ссылке (это эквивалент ответа на письмо):\n"
         f"{confirm_url}\n\n"
         f"После подтверждения владелец получит уведомление.\n"
@@ -123,22 +143,43 @@ def send_tenant_payment_reminder(
     _send(tenant_email, subject, body)
 
 
-def send_owner_paid(*, owner_email: str, property_name: str, address: str, tenant_name: str) -> None:
-    subject = f"Оплата подтверждена: {property_name}"
+def send_owner_paid(
+    *,
+    owner_email: str,
+    property_name: str,
+    address: str,
+    tenant_name: str,
+    period_label: str,
+    amount: int,
+) -> None:
+    subject = f"Оплата подтверждена: {property_name} ({period_label})"
     body = (
         f"Арендатор {tenant_name} подтвердил оплату по объекту.\n\n"
         f"Объект: {property_name}\n"
         f"Адрес: {address}\n"
+        f"Период: {period_label}\n"
+        f"Сумма: {_money(amount)}\n"
     )
     _send(owner_email, subject, body)
 
 
-def send_owner_not_paid(*, owner_email: str, property_name: str, address: str, tenant_name: str, rent_end_iso: str) -> None:
-    subject = f"Нет подтверждения оплаты: {property_name}"
+def send_owner_not_paid(
+    *,
+    owner_email: str,
+    property_name: str,
+    address: str,
+    tenant_name: str,
+    period_label: str,
+    amount_due: int,
+    due_date_iso: str,
+) -> None:
+    subject = f"Нет оплаты аренды: {property_name} ({period_label})"
     body = (
-        f"По объекту «{property_name}» не получено подтверждение оплаты от арендатора {tenant_name}.\n\n"
+        f"По объекту «{property_name}» не получена оплата от арендатора {tenant_name}.\n\n"
         f"Адрес: {address}\n"
-        f"Дата окончания аренды: {rent_end_iso}\n"
+        f"Период: {period_label}\n"
+        f"Сумма к оплате: {_money(amount_due)}\n"
+        f"Срок оплаты был: {due_date_iso}\n"
     )
     _send(owner_email, subject, body)
 

@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { apiJson, apiUpload } from "../api";
 import { AlertError, AlertSuccess } from "../components/Alert";
 import { PageLoader } from "../components/PageLoader";
-import type { Lease, Property, PropertyStatus } from "../types";
+import type { Lease, Property, PropertyStatus, RentPeriod } from "../types";
 
 const statuses: { value: PropertyStatus; label: string }[] = [
   { value: "free", label: "Свободен" },
@@ -23,6 +23,14 @@ const payStyle: Record<string, string> = {
   overdue: "bg-red-50 text-red-800 ring-red-500/20",
 };
 
+const MONTHS = [
+  "", "январь", "февраль", "март", "апрель", "май", "июнь",
+  "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
+];
+
+const money = (n: number) => `${n.toLocaleString("ru-RU")} ₽`;
+const monthLabel = (y: number, m: number) => `${MONTHS[m] ?? m} ${y}`;
+
 export function PropertyPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -38,18 +46,33 @@ export function PropertyPage() {
   const [tenantEmail, setTenantEmail] = useState("");
   const [rentStart, setRentStart] = useState("");
   const [rentEnd, setRentEnd] = useState("");
+  const [rentAmount, setRentAmount] = useState("");
+  const [paymentDay, setPaymentDay] = useState("");
+  const [contractNumber, setContractNumber] = useState("");
+  const [contractDate, setContractDate] = useState("");
   const [file, setFile] = useState<File | null>(null);
 
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(!isNew);
 
-  const [testLeaseId, setTestLeaseId] = useState("");
+  const [payDrafts, setPayDrafts] = useState<Record<string, string>>({});
+  const [busyPeriodId, setBusyPeriodId] = useState<string | null>(null);
+
+  const [testPeriodId, setTestPeriodId] = useState("");
   const [testToEmail, setTestToEmail] = useState("");
   const [testOwnerEmail, setTestOwnerEmail] = useState("");
   const [testSending, setTestSending] = useState(false);
-  const [leaseEmailDrafts, setLeaseEmailDrafts] = useState<Record<string, string>>({});
-  const [savingLeaseId, setSavingLeaseId] = useState<string | null>(null);
+
+  const allPeriods: { lease: Lease; period: RentPeriod }[] = leases.flatMap((l) =>
+    l.periods.map((p) => ({ lease: l, period: p })),
+  );
+
+  async function reloadLeases() {
+    if (!id) return;
+    const list = await apiJson<Lease[]>(`/api/properties/${id}/leases`);
+    setLeases(list);
+  }
 
   useEffect(() => {
     if (!id) return;
@@ -73,21 +96,14 @@ export function PropertyPage() {
   }, [id]);
 
   useEffect(() => {
-    if (leases.length === 0) return;
-    setTestLeaseId((prev) => prev || leases[0].id);
-    setTestToEmail((prev) => prev || leases[0].tenant_email);
-  }, [leases]);
-
-  useEffect(() => {
-    if (ownerEmail) setTestOwnerEmail(ownerEmail);
+    if (ownerEmail) setTestOwnerEmail((prev) => prev || ownerEmail);
   }, [ownerEmail]);
 
   useEffect(() => {
-    const m: Record<string, string> = {};
-    leases.forEach((l) => {
-      m[l.id] = l.tenant_email;
-    });
-    setLeaseEmailDrafts(m);
+    if (allPeriods.length === 0) return;
+    setTestPeriodId((prev) => prev || allPeriods[0].period.id);
+    setTestToEmail((prev) => prev || allPeriods[0].lease.tenant_email);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leases]);
 
   async function saveProperty(e: FormEvent) {
@@ -98,23 +114,13 @@ export function PropertyPage() {
       if (isNew) {
         const p = await apiJson<Property>("/api/properties", {
           method: "POST",
-          body: JSON.stringify({
-            name,
-            address,
-            status,
-            owner_email: ownerEmail,
-          }),
+          body: JSON.stringify({ name, address, status, owner_email: ownerEmail }),
         });
         navigate(`/properties/${p.id}`, { replace: true });
       } else {
         await apiJson(`/api/properties/${id}`, {
           method: "PATCH",
-          body: JSON.stringify({
-            name,
-            address,
-            status,
-            owner_email: ownerEmail,
-          }),
+          body: JSON.stringify({ name, address, status, owner_email: ownerEmail }),
         });
         setMsg("Изменения сохранены");
       }
@@ -133,8 +139,8 @@ export function PropertyPage() {
         await apiUpload<Lease>(`/api/properties/${id}/leases/upload`, file);
         setFile(null);
       } else {
-        if (!tenantName.trim() || !tenantEmail.trim() || !rentStart || !rentEnd) {
-          setErr("Заполните ФИО, email и даты или загрузите .txt");
+        if (!tenantName.trim() || !tenantEmail.trim() || !rentStart || !rentEnd || !rentAmount || !paymentDay) {
+          setErr("Заполните ФИО, email, даты, сумму и день оплаты — или загрузите .txt");
           return;
         }
         await apiJson<Lease>(`/api/properties/${id}/leases`, {
@@ -144,119 +150,88 @@ export function PropertyPage() {
             tenant_email: tenantEmail,
             rent_start: rentStart,
             rent_end: rentEnd,
+            rent_amount: Number(rentAmount),
+            payment_day: Number(paymentDay),
+            contract_number: contractNumber.trim() || null,
+            contract_date: contractDate || null,
           }),
         });
         setTenantName("");
         setTenantEmail("");
         setRentStart("");
         setRentEnd("");
+        setRentAmount("");
+        setPaymentDay("");
+        setContractNumber("");
+        setContractDate("");
       }
-      const list = await apiJson<Lease[]>(`/api/properties/${id}/leases`);
-      setLeases(list);
-      setMsg("Аренда добавлена");
+      await reloadLeases();
+      setMsg("Аренда добавлена — начисления по месяцам созданы");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Ошибка");
     }
   }
 
-  async function sendTestTenantReminder() {
-    if (!testLeaseId) {
-      setErr("Выберите аренду для теста");
-      return;
-    }
-    setErr(null);
-    setMsg(null);
-    setTestSending(true);
-    try {
-      const body: { lease_id: string; to_email?: string } = { lease_id: testLeaseId };
-      if (testToEmail.trim()) body.to_email = testToEmail.trim();
-      await apiJson<{ detail: string }>("/api/email/test/tenant-reminder", {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
-      setMsg("Тестовое письмо «надо заплатить» отправлено на указанный email.");
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Ошибка отправки");
-    } finally {
-      setTestSending(false);
-    }
-  }
-
-  async function sendTestOwnerPaid() {
-    if (!testLeaseId) {
-      setErr("Выберите аренду для теста");
-      return;
-    }
-    if (!testOwnerEmail.trim()) {
-      setErr("Укажите email владельца");
-      return;
-    }
-    setErr(null);
-    setMsg(null);
-    setTestSending(true);
-    try {
-      await apiJson<{ detail: string }>("/api/email/test/owner-paid", {
-        method: "POST",
-        body: JSON.stringify({
-          lease_id: testLeaseId,
-          to_email: testOwnerEmail,
-        }),
-      });
-      setMsg("Тест: письмо владельцу «оплата подтверждена» отправлено.");
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Ошибка отправки");
-    } finally {
-      setTestSending(false);
-    }
-  }
-
-  async function saveLeaseTenantEmail(leaseId: string) {
+  async function recordPayment(lease: Lease, period: RentPeriod, amount: number) {
     if (!id) return;
-    const email = leaseEmailDrafts[leaseId]?.trim();
-    if (!email) {
-      setErr("Укажите email арендатора");
+    if (!amount || amount <= 0) {
+      setErr("Укажите сумму поступления");
       return;
     }
     setErr(null);
     setMsg(null);
-    setSavingLeaseId(leaseId);
+    setBusyPeriodId(period.id);
     try {
-      await apiJson(`/api/properties/${id}/leases/${leaseId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ tenant_email: email }),
+      await apiJson(`/api/properties/${id}/leases/${lease.id}/periods/${period.id}/payments`, {
+        method: "POST",
+        body: JSON.stringify({ amount }),
       });
-      const list = await apiJson<Lease[]>(`/api/properties/${id}/leases`);
-      setLeases(list);
-      if (testLeaseId === leaseId) setTestToEmail(email);
-      setMsg("Email арендатора сохранён — напоминания пойдут на этот адрес.");
+      await reloadLeases();
+      setPayDrafts((prev) => ({ ...prev, [period.id]: "" }));
+      setMsg("Оплата зафиксирована");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Ошибка");
     } finally {
-      setSavingLeaseId(null);
+      setBusyPeriodId(null);
     }
   }
 
-  async function sendTestOwnerNotPaid() {
-    if (!testLeaseId) {
-      setErr("Выберите аренду для теста");
+  async function terminateLease(lease: Lease) {
+    if (!id) return;
+    const today = new Date().toISOString().slice(0, 10);
+    setErr(null);
+    setMsg(null);
+    try {
+      await apiJson(`/api/properties/${id}/leases/${lease.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ terminated_at: today }),
+      });
+      await reloadLeases();
+      setMsg("Договор отмечен расторгнутым — новые начисления не создаются");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Ошибка");
+    }
+  }
+
+  async function sendTest(kind: "tenant-reminder" | "owner-paid" | "owner-not-paid") {
+    if (!testPeriodId) {
+      setErr("Выберите начисление для теста");
       return;
     }
-    if (!testOwnerEmail.trim()) {
-      setErr("Укажите email владельца");
+    const toEmail = kind === "tenant-reminder" ? testToEmail : testOwnerEmail;
+    if (!toEmail.trim()) {
+      setErr("Укажите email получателя");
       return;
     }
     setErr(null);
     setMsg(null);
     setTestSending(true);
     try {
-      await apiJson<{ detail: string }>("/api/email/test/owner-not-paid", {
+      await apiJson<{ detail: string }>(`/api/email/test/${kind}`, {
         method: "POST",
-        body: JSON.stringify({
-          lease_id: testLeaseId,
-          to_email: testOwnerEmail,
-        }),
+        body: JSON.stringify({ period_id: testPeriodId, to_email: toEmail.trim() }),
       });
-      setMsg("Тест: письмо владельцу «нет подтверждения оплаты» отправлено.");
+      setMsg("Тестовое письмо отправлено.");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Ошибка отправки");
     } finally {
@@ -311,7 +286,7 @@ export function PropertyPage() {
               className="input-field"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Например: 2-комн. на Ленина"
+              placeholder="Например: Кирова, 1 этаж — 256,3 кв.м"
               required
             />
           </div>
@@ -367,18 +342,19 @@ export function PropertyPage() {
             <div className="border-b border-ink-900/[0.06] bg-gradient-to-r from-brand-50/80 to-transparent px-6 py-5 sm:px-8">
               <h2 className="font-display text-lg font-semibold text-ink-900">Занять объект</h2>
               <p className="mt-1 text-sm text-ink-600">
-                Вручную или загрузите .txt с ФИО, email и датами начала и окончания аренды.
+                Вручную или загрузите .txt (ФИО, email, даты, сумма аренды, день оплаты). По договору
+                автоматически создаются ежемесячные начисления.
               </p>
             </div>
             <form onSubmit={addLease} className="space-y-5 p-6 sm:p-8">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="label">ФИО арендатора</label>
+                  <label className="label">ФИО / арендатор</label>
                   <input
                     className="input-field"
                     value={tenantName}
                     onChange={(e) => setTenantName(e.target.value)}
-                    placeholder="Иванов Иван"
+                    placeholder="ИП Иванов Иван"
                   />
                 </div>
                 <div>
@@ -389,6 +365,29 @@ export function PropertyPage() {
                     value={tenantEmail}
                     onChange={(e) => setTenantEmail(e.target.value)}
                     placeholder="tenant@mail.ru"
+                  />
+                </div>
+                <div>
+                  <label className="label">Сумма аренды в месяц, ₽</label>
+                  <input
+                    type="number"
+                    min="1"
+                    className="input-field"
+                    value={rentAmount}
+                    onChange={(e) => setRentAmount(e.target.value)}
+                    placeholder="35000"
+                  />
+                </div>
+                <div>
+                  <label className="label">День оплaты (число месяца)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    className="input-field"
+                    value={paymentDay}
+                    onChange={(e) => setPaymentDay(e.target.value)}
+                    placeholder="17"
                   />
                 </div>
                 <div>
@@ -409,6 +408,24 @@ export function PropertyPage() {
                     onChange={(e) => setRentEnd(e.target.value)}
                   />
                 </div>
+                <div>
+                  <label className="label">№ договора (необязательно)</label>
+                  <input
+                    className="input-field"
+                    value={contractNumber}
+                    onChange={(e) => setContractNumber(e.target.value)}
+                    placeholder="8"
+                  />
+                </div>
+                <div>
+                  <label className="label">Дата договора (необязательно)</label>
+                  <input
+                    type="date"
+                    className="input-field"
+                    value={contractDate}
+                    onChange={(e) => setContractDate(e.target.value)}
+                  />
+                </div>
               </div>
 
               <div className="rounded-2xl border-2 border-dashed border-brand-300/50 bg-brand-50/30 px-5 py-6 text-center transition hover:border-brand-400/60 hover:bg-brand-50/50">
@@ -419,9 +436,7 @@ export function PropertyPage() {
                   className="mx-auto block w-full max-w-sm cursor-pointer text-sm text-ink-600 file:mr-4 file:cursor-pointer file:rounded-lg file:border-0 file:bg-brand-500 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-brand-600"
                   onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 />
-                {file && (
-                  <p className="mt-3 text-xs font-medium text-brand-700">Выбран: {file.name}</p>
-                )}
+                {file && <p className="mt-3 text-xs font-medium text-brand-700">Выбран: {file.name}</p>}
               </div>
 
               <button type="submit" className="btn-primary w-full justify-center py-3">
@@ -432,82 +447,126 @@ export function PropertyPage() {
 
           {leases.length > 0 && (
             <section>
-              <h3 className="mb-4 font-display text-base font-semibold text-ink-900">История аренды</h3>
-              <ul className="space-y-3">
+              <h3 className="mb-4 font-display text-base font-semibold text-ink-900">Аренда и начисления</h3>
+              <ul className="space-y-5">
                 {leases.map((l) => (
-                  <li key={l.id} className="card-elevated flex flex-col gap-4 p-5">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
+                  <li key={l.id} className="card-elevated p-5 sm:p-6">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
                         <p className="font-medium text-ink-900">{l.tenant_name}</p>
-                        <p className="text-xs text-ink-500 mt-1">
-                          На этот email уходят напоминания арендатору (в т.ч. из планировщика).
+                        <p className="mt-1 text-xs text-ink-500">{l.tenant_email}</p>
+                        <p className="mt-1 text-xs text-ink-500">
+                          {money(l.rent_amount)}/мес · оплата до {l.payment_day} числа · {l.rent_start} — {l.rent_end}
+                          {l.contract_number ? ` · договор №${l.contract_number}` : ""}
                         </p>
                       </div>
-                      <div className="flex flex-wrap items-center gap-3 text-sm">
-                        <span className="inline-flex items-center gap-1.5 rounded-lg bg-surface-muted px-2.5 py-1 text-ink-600">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="text-brand-500">
-                            <rect x="3" y="4" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.5" />
-                            <path d="M16 2v4M8 2v4M3 10h18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                          </svg>
-                          {l.rent_start} — {l.rent_end}
+                      {l.terminated_at ? (
+                        <span className="badge shrink-0 bg-ink-100 text-ink-600 ring-1 ring-ink-900/10">
+                          Расторгнут {l.terminated_at}
                         </span>
-                        <span
-                          className={`badge ring-1 ${payStyle[l.payment_status] ?? "bg-ink-100 text-ink-700"}`}
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => void terminateLease(l)}
+                          className="btn-secondary shrink-0 py-2 text-xs"
                         >
-                          {payLabel[l.payment_status] ?? l.payment_status}
-                        </span>
-                      </div>
+                          Расторгнуть
+                        </button>
+                      )}
                     </div>
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                      <div className="flex-1 min-w-0">
-                        <label className="label text-xs">Email арендатора</label>
-                        <input
-                          type="email"
-                          className="input-field"
-                          value={leaseEmailDrafts[l.id] ?? l.tenant_email}
-                          onChange={(e) =>
-                            setLeaseEmailDrafts((prev) => ({ ...prev, [l.id]: e.target.value }))
-                          }
-                        />
+
+                    {l.periods.length > 0 && (
+                      <div className="mt-4 overflow-hidden rounded-xl border border-ink-900/[0.06]">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-surface-muted text-left text-xs uppercase tracking-wider text-ink-500">
+                              <th className="px-3 py-2 font-semibold">Период</th>
+                              <th className="px-3 py-2 font-semibold">Оплатить до</th>
+                              <th className="px-3 py-2 font-semibold">Начислено</th>
+                              <th className="px-3 py-2 font-semibold">Оплачено</th>
+                              <th className="px-3 py-2 font-semibold">Статус</th>
+                              <th className="px-3 py-2 font-semibold">Внести оплату</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-ink-900/[0.05]">
+                            {l.periods.map((p) => {
+                              const remaining = Math.max(p.amount_due - p.amount_paid, 0);
+                              const draft = payDrafts[p.id] ?? "";
+                              return (
+                                <tr key={p.id} className="text-ink-700">
+                                  <td className="px-3 py-2 whitespace-nowrap">{monthLabel(p.year, p.month)}</td>
+                                  <td className="px-3 py-2 whitespace-nowrap text-ink-500">{p.due_date}</td>
+                                  <td className="px-3 py-2 whitespace-nowrap">{money(p.amount_due)}</td>
+                                  <td className="px-3 py-2 whitespace-nowrap">{money(p.amount_paid)}</td>
+                                  <td className="px-3 py-2">
+                                    <span className={`badge ring-1 ${payStyle[p.status] ?? "bg-ink-100"}`}>
+                                      {payLabel[p.status] ?? p.status}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    {p.status === "paid" ? (
+                                      <span className="text-xs text-emerald-700">—</span>
+                                    ) : (
+                                      <div className="flex items-center gap-1.5">
+                                        <input
+                                          type="number"
+                                          min="1"
+                                          className="input-field h-9 w-24 py-1 text-sm"
+                                          value={draft}
+                                          placeholder={String(remaining)}
+                                          onChange={(e) =>
+                                            setPayDrafts((prev) => ({ ...prev, [p.id]: e.target.value }))
+                                          }
+                                        />
+                                        <button
+                                          type="button"
+                                          disabled={busyPeriodId === p.id}
+                                          onClick={() =>
+                                            void recordPayment(l, p, Number(draft || remaining))
+                                          }
+                                          className="btn-secondary shrink-0 px-3 py-1.5 text-xs"
+                                        >
+                                          {busyPeriodId === p.id ? "…" : "ОК"}
+                                        </button>
+                                      </div>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       </div>
-                      <button
-                        type="button"
-                        disabled={savingLeaseId === l.id}
-                        onClick={() => void saveLeaseTenantEmail(l.id)}
-                        className="btn-secondary shrink-0 py-2.5 sm:mb-0.5"
-                      >
-                        {savingLeaseId === l.id ? "Сохранение…" : "Сохранить email"}
-                      </button>
-                    </div>
+                    )}
                   </li>
                 ))}
               </ul>
             </section>
           )}
 
-          {leases.length > 0 && (
+          {allPeriods.length > 0 && (
             <section className="rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50/90 to-orange-50/40 p-6 sm:p-8">
               <h3 className="font-display text-base font-semibold text-amber-950">Тестовая отправка почты</h3>
               <p className="mt-1 text-sm text-amber-900/80">
-                Те же шаблоны, что в проде: напоминание арендатору; владельцу — при подтверждении оплаты или при
-                отсутствии оплаты (как после дедлайна).
+                Те же шаблоны, что в проде: напоминание арендатору об оплате за период; владельцу — при
+                подтверждении оплаты или при отсутствии оплаты (как после срока).
               </p>
               <div className="mt-5 space-y-6">
                 <div>
-                  <label className="label text-amber-900/70">Аренда (контекст письма)</label>
+                  <label className="label text-amber-900/70">Начисление (контекст письма)</label>
                   <select
                     className="input-field"
-                    value={testLeaseId}
+                    value={testPeriodId}
                     onChange={(e) => {
-                      const lid = e.target.value;
-                      setTestLeaseId(lid);
-                      const l = leases.find((x) => x.id === lid);
-                      if (l) setTestToEmail(l.tenant_email);
+                      const pid = e.target.value;
+                      setTestPeriodId(pid);
+                      const found = allPeriods.find((x) => x.period.id === pid);
+                      if (found) setTestToEmail(found.lease.tenant_email);
                     }}
                   >
-                    {leases.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.tenant_name} · до {l.rent_end}
+                    {allPeriods.map(({ lease, period }) => (
+                      <option key={period.id} value={period.id}>
+                        {lease.tenant_name} · {monthLabel(period.year, period.month)} · {money(period.amount_due)}
                       </option>
                     ))}
                   </select>
@@ -528,7 +587,7 @@ export function PropertyPage() {
                   <button
                     type="button"
                     disabled={testSending}
-                    onClick={() => void sendTestTenantReminder()}
+                    onClick={() => void sendTest("tenant-reminder")}
                     className="btn-primary w-full justify-center py-3 disabled:opacity-60"
                   >
                     {testSending ? "Отправка…" : "Напоминание об оплате (тест)"}
@@ -551,7 +610,7 @@ export function PropertyPage() {
                     <button
                       type="button"
                       disabled={testSending}
-                      onClick={() => void sendTestOwnerPaid()}
+                      onClick={() => void sendTest("owner-paid")}
                       className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-50/80 px-4 py-3 text-sm font-semibold text-emerald-900 shadow-sm transition hover:border-emerald-300 disabled:opacity-60"
                     >
                       {testSending ? "…" : "Оплата подтверждена (тест)"}
@@ -559,16 +618,12 @@ export function PropertyPage() {
                     <button
                       type="button"
                       disabled={testSending}
-                      onClick={() => void sendTestOwnerNotPaid()}
+                      onClick={() => void sendTest("owner-not-paid")}
                       className="rounded-xl border border-rose-200 bg-gradient-to-br from-rose-50 to-orange-50/50 px-4 py-3 text-sm font-semibold text-rose-900 shadow-sm transition hover:border-rose-300 disabled:opacity-60"
                     >
                       {testSending ? "…" : "Нет оплаты (тест)"}
                     </button>
                   </div>
-                  <p className="text-xs text-amber-900/70 leading-relaxed">
-                    «Оплата подтверждена» — как после ссылки подтверждения арендатором. «Нет оплаты» — как при
-                    просрочке без оплаты.
-                  </p>
                 </div>
               </div>
             </section>

@@ -7,8 +7,10 @@ services:
       POSTGRES_DB: drivee
     volumes:
       - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    # Порт наружу не пробрасываем: БД доступна только сервисам внутри docker-сети
+    # (backend ходит на db:5432). Для локального доступа добавьте проброс вручную.
+    expose:
+      - "5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U drivee -d drivee"]
       interval: 3s
