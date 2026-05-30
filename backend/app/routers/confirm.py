@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -10,6 +11,7 @@ from app.payment_check import PdfExtractError, extract_pdf_text, verify_payment
 from app.schemas import ConfirmOut, MessageOut
 
 router = APIRouter(tags=["confirm"])
+logger = logging.getLogger(__name__)
 
 MAX_PDF_BYTES = 10 * 1024 * 1024  # 10 МБ
 
@@ -89,16 +91,22 @@ async def post_confirm(
     period.paid_at = datetime.utcnow()
     db.commit()
 
-    send_owner_paid(
-        owner_email=prop.owner_email,
-        property_name=prop.name,
-        address=prop.address,
-        tenant_name=lease.tenant_name,
-        period_label=period_label,
-        amount=period.amount_due,
-    )
+    # Уведомление владельца — побочный эффект: оплата уже зафиксирована,
+    # сбой почты не должен ломать подтверждение для арендатора.
+    owner_notified = True
+    try:
+        send_owner_paid(
+            owner_email=prop.owner_email,
+            property_name=prop.name,
+            address=prop.address,
+            tenant_name=lease.tenant_name,
+            period_label=period_label,
+            amount=period.amount_due,
+        )
+    except Exception:  # noqa: BLE001
+        owner_notified = False
+        logger.exception("Не удалось отправить уведомление владельцу об оплате (period %s)", period.id)
 
-    detail = "Квитанция проверена, оплата подтверждена. Владелец уведомлён."
-    if result.reason:
-        detail = f"{result.reason} Владелец уведомлён об оплате."
-    return MessageOut(ok=True, detail=detail)
+    base = result.reason.strip() if result.reason else "Квитанция проверена, оплата подтверждена."
+    tail = "Владелец уведомлён об оплате." if owner_notified else "Оплата зафиксирована."
+    return MessageOut(ok=True, detail=f"{base} {tail}")
