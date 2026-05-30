@@ -135,8 +135,15 @@ def test_record_payment_partial_then_full(client, sent_emails):
 
 # --- ФТ-5: подтверждение оплаты по ссылке ---
 
-def test_confirm_flow(client, db, sent_emails):
+def test_confirm_flow(client, db, sent_emails, monkeypatch):
     from app.models import RentPeriod
+    from app.payment_check import VerifyResult
+    from app.routers import confirm as confirm_router
+
+    # Подменяем извлечение текста и LLM-проверку — без сети и реального PDF.
+    monkeypatch.setattr(confirm_router, "extract_pdf_text", lambda data: "квитанция")
+    verdict = {"value": VerifyResult(True, "Оплата подтверждена.")}
+    monkeypatch.setattr(confirm_router, "verify_payment", lambda *a, **k: verdict["value"])
 
     p = _new_property(client)
     lease = client.post(f"/api/properties/{p['id']}/leases", json=_lease_payload()).json()
@@ -146,14 +153,25 @@ def test_confirm_flow(client, db, sent_emails):
     assert info.status_code == 200
     assert info.json()["amount_due"] == 35000
 
-    bad = client.post(f"/api/confirm/{token}", json={"confirmation_text": "привет"})
-    assert bad.status_code == 400
+    pdf = ("receipt.pdf", b"%PDF-1.4 fake", "application/pdf")
 
-    ok = client.post(f"/api/confirm/{token}", json={"confirmation_text": "оплатил аренду переводом"})
+    # Не PDF — отклоняем до проверки.
+    not_pdf = client.post(f"/api/confirm/{token}", files={"file": ("x.txt", b"hi", "text/plain")})
+    assert not_pdf.status_code == 400
+
+    # LLM забраковал квитанцию → 400 с понятной причиной, период не оплачен.
+    verdict["value"] = VerifyResult(False, "сумма меньше ожидаемой")
+    bad = client.post(f"/api/confirm/{token}", files={"file": pdf})
+    assert bad.status_code == 400
+    assert "сумма меньше ожидаемой" in bad.json()["detail"]
+
+    # Корректная квитанция → оплата подтверждена, владелец уведомлён.
+    verdict["value"] = VerifyResult(True, "Оплата подтверждена.")
+    ok = client.post(f"/api/confirm/{token}", files={"file": pdf})
     assert ok.status_code == 200
     assert any("Оплата подтверждена" in e["subject"] for e in sent_emails)
 
-    again = client.post(f"/api/confirm/{token}", json={"confirmation_text": "оплатил ещё раз"})
+    again = client.post(f"/api/confirm/{token}", files={"file": pdf})
     assert again.status_code == 400
 
 

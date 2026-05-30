@@ -1,11 +1,14 @@
 import type { ReactNode } from "react";
-import { Link, Route, Routes } from "react-router-dom";
+import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { ConfirmPage } from "./pages/ConfirmPage";
 import { HomePage } from "./pages/HomePage";
 import { PropertyPage } from "./pages/PropertyPage";
+import { LoginPage } from "./pages/LoginPage";
 import { BrandMark } from "./components/BrandMark";
+import { AuthProvider, useAuth } from "./auth";
 
 function Layout({ children }: { children: ReactNode }) {
+  const { token, username, logout } = useAuth();
   return (
     <div className="min-h-screen flex flex-col">
       <header className="sticky top-0 z-50 border-b border-white/40 bg-white/70 backdrop-blur-xl supports-[backdrop-filter]:bg-white/60">
@@ -19,8 +22,19 @@ function Layout({ children }: { children: ReactNode }) {
               </p>
             </div>
           </Link>
-          <nav className="hidden sm:flex items-center gap-6 text-sm font-medium text-ink-600">
-            <span className="text-ink-400">Мониторинг аренды и платежей</span>
+          <nav className="flex items-center gap-4 text-sm font-medium text-ink-600">
+            <span className="hidden text-ink-400 sm:inline">Мониторинг аренды и платежей</span>
+            {token && (
+              <div className="flex items-center gap-3">
+                <span className="text-ink-500">{username}</span>
+                <button
+                  onClick={logout}
+                  className="rounded-lg border border-ink-900/10 bg-white px-3 py-1.5 text-xs font-semibold text-ink-700 transition hover:bg-ink-50"
+                >
+                  Выйти
+                </button>
+              </div>
+            )}
           </nav>
         </div>
         <div className="h-px w-full bg-gradient-to-r from-transparent via-brand-400/30 to-transparent" />
@@ -38,15 +52,27 @@ function Layout({ children }: { children: ReactNode }) {
   );
 }
 
+function RequireAuth({ children }: { children: ReactNode }) {
+  const { token } = useAuth();
+  const location = useLocation();
+  if (!token) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
-    <Layout>
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/properties/new" element={<PropertyPage />} />
-        <Route path="/properties/:id" element={<PropertyPage />} />
-        <Route path="/confirm/:token" element={<ConfirmPage />} />
-      </Routes>
-    </Layout>
+    <AuthProvider>
+      <Layout>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/confirm/:token" element={<ConfirmPage />} />
+          <Route path="/" element={<RequireAuth><HomePage /></RequireAuth>} />
+          <Route path="/properties/new" element={<RequireAuth><PropertyPage /></RequireAuth>} />
+          <Route path="/properties/:id" element={<RequireAuth><PropertyPage /></RequireAuth>} />
+        </Routes>
+      </Layout>
+    </AuthProvider>
   );
 }

@@ -124,10 +124,6 @@ class ConfirmOut(BaseModel):
     status: PeriodStatus
 
 
-class ConfirmBody(BaseModel):
-    confirmation_text: str = Field(..., min_length=3, description="Краткий текст подтверждения оплаты")
-
-
 class EmailTestBody(BaseModel):
     """Если указан period_id, to_email можно не передавать — подставится email из аренды / владельца."""
 
@@ -144,3 +140,13 @@ class EmailTestBody(BaseModel):
 class MessageOut(BaseModel):
     ok: bool = True
     detail: str = ""
+
+
+class LoginBody(BaseModel):
+    username: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=1)
+
+
+class TokenOut(BaseModel):
+    token: str
+    username: str

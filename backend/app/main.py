@@ -2,9 +2,10 @@ from contextlib import asynccontextmanager
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.auth import require_auth, router as auth_router
 from app.config import settings
 from app.database import Base, SessionLocal, engine
 from app.jobs import generate_due_periods, run_overdue_job, run_reminder_3d_job
@@ -62,10 +63,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(properties.router)
-app.include_router(leases.router)
+# Публичные: вход и подтверждение оплаты арендатором по ссылке из письма.
+app.include_router(auth_router)
 app.include_router(confirm.router)
-app.include_router(email_test.router)
+# Защищённые авторизацией (админка владельца).
+app.include_router(properties.router, dependencies=[Depends(require_auth)])
+app.include_router(leases.router, dependencies=[Depends(require_auth)])
+app.include_router(email_test.router, dependencies=[Depends(require_auth)])
 
 
 @app.get("/api/health")
@@ -73,7 +77,7 @@ def health():
     return {"status": "ok"}
 
 
-@app.post("/api/jobs/run-now")
+@app.post("/api/jobs/run-now", dependencies=[Depends(require_auth)])
 def run_jobs_now():
     """Ручной запуск проверок (генерация начислений, напоминание за 3 дня, просрочка)."""
     db = SessionLocal()

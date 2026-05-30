@@ -4,6 +4,7 @@ from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.orm import sessionmaker
 
 import app.mail as mail
+from app.auth import require_auth
 from app.database import Base, get_db
 from app.main import app
 
@@ -56,6 +57,7 @@ def client(Session, sent_emails):
             s.close()
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[require_auth] = lambda: None  # ФТ выполняем без авторизации
     # Без контекстного менеджера lifespan не запускается (нет seed/планировщика/реальной БД).
     c = TestClient(app)
     yield c

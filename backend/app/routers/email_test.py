@@ -49,7 +49,7 @@ def test_tenant_reminder(body: EmailTestBody, db: Session = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Ошибка SMTP: {e}") from e
+        raise HTTPException(status_code=502, detail=f"Ошибка отправки письма: {e}") from e
     return MessageOut(detail="Письмо арендатору отправлено")
 
 
@@ -78,7 +78,7 @@ def test_owner_paid(body: EmailTestBody, db: Session = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Ошибка SMTP: {e}") from e
+        raise HTTPException(status_code=502, detail=f"Ошибка отправки письма: {e}") from e
     return MessageOut(detail="Письмо владельцу (оплачено) отправлено")
 
 
@@ -108,5 +108,5 @@ def test_owner_not_paid(body: EmailTestBody, db: Session = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Ошибка SMTP: {e}") from e
+        raise HTTPException(status_code=502, detail=f"Ошибка отправки письма: {e}") from e
     return MessageOut(detail="Письмо владельцу (не оплатили) отправлено")

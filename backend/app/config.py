@@ -22,6 +22,16 @@ class Settings(BaseSettings):
     """По умолчанию True: только IPv4 (часто устраняет зависания на битом IPv6)."""
     smtp_timeout: int = 30
     smtp_debug: bool = False
+    # Канал отправки писем: "auto" (Resend, если задан ключ, иначе SMTP), "resend" или "smtp".
+    mail_provider: str = "auto"
+    # Resend (HTTP-API, https://resend.com) — отправка по 443 в обход блокировки SMTP.
+    resend_api_key: str = ""
+    # Адрес отправителя. Для теста подходит onboarding@resend.dev (без своего домена).
+    mail_from: str = "Drivee <onboarding@resend.dev>"
+    # Проверка PDF-квитанции об оплате через LLM (OpenRouter, https://openrouter.ai).
+    openrouter_api_key: str = ""
+    openrouter_model: str = "openai/gpt-4o-mini"
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
     frontend_url: str = "http://localhost:5173"
     api_public_url: str = "http://localhost:8000"
     # Засеять демо-объекты заказчика при пустой БД (для быстрого старта).
@@ -30,6 +40,10 @@ class Settings(BaseSettings):
     seed_history: bool = False
     # Владелец объектов по умолчанию (см. DATA.md).
     owner_email: str = "ilpk7778@mail.ru"
+    # Вход в админку (один пользователь). Пароль и секрет — только в .env.
+    auth_username: str = "admin"
+    auth_password: str = ""
+    auth_secret: str = ""
 
     @field_validator("smtp_pass", mode="before")
     @classmethod

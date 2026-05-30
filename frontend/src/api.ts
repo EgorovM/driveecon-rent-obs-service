@@ -1,5 +1,29 @@
 const API = import.meta.env.VITE_API_URL ?? "";
 
+const TOKEN_KEY = "drivee_token";
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+export function setToken(t: string): void {
+  localStorage.setItem(TOKEN_KEY, t);
+}
+export function clearToken(): void {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+function authHeaders(): Record<string, string> {
+  const t = getToken();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
+function onUnauthorized(): void {
+  clearToken();
+  if (!window.location.pathname.startsWith("/login")) {
+    window.location.href = "/login";
+  }
+}
+
 function detailMessage(j: { detail?: unknown }): string {
   const d = j.detail;
   if (Array.isArray(d)) {
@@ -16,9 +40,14 @@ export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
       ...(init?.headers as Record<string, string>),
     },
   });
+  if (res.status === 401) {
+    onUnauthorized();
+    throw new Error("Требуется вход");
+  }
   if (!res.ok) {
     let msg = res.statusText;
     try {
@@ -36,7 +65,11 @@ export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
 export async function apiUpload<T>(path: string, file: File): Promise<T> {
   const fd = new FormData();
   fd.append("file", file);
-  const res = await fetch(`${API}${path}`, { method: "POST", body: fd });
+  const res = await fetch(`${API}${path}`, { method: "POST", body: fd, headers: authHeaders() });
+  if (res.status === 401) {
+    onUnauthorized();
+    throw new Error("Требуется вход");
+  }
   if (!res.ok) {
     let msg = res.statusText;
     try {

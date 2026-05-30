@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { apiJson } from "../api";
+import { apiJson, apiUpload } from "../api";
 import { AlertError, AlertSuccess } from "../components/Alert";
 import { PageLoader } from "../components/PageLoader";
 import type { ConfirmInfo } from "../types";
@@ -14,10 +14,11 @@ const money = (n: number) => `${n.toLocaleString("ru-RU")} ₽`;
 export function ConfirmPage() {
   const { token } = useParams();
   const [info, setInfo] = useState<ConfirmInfo | null>(null);
-  const [text, setText] = useState("");
+  const [file, setFile] = useState<File | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -29,17 +30,17 @@ export function ConfirmPage() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!token) return;
+    if (!token || !file) return;
     setErr(null);
     setOk(null);
+    setSubmitting(true);
     try {
-      const r = await apiJson<{ detail: string }>(`/api/confirm/${token}`, {
-        method: "POST",
-        body: JSON.stringify({ confirmation_text: text }),
-      });
+      const r = await apiUpload<{ detail: string }>(`/api/confirm/${token}`, file);
       setOk(r.detail);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Ошибка");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -76,7 +77,7 @@ export function ConfirmPage() {
           Подтверждение оплаты
         </h1>
         <p className="mt-2 text-sm text-ink-600">
-          Кратко опишите, что аренду оплатили — владелец получит уведомление.
+          Прикрепите PDF-квитанцию из банка — мы проверим её и уведомим владельца.
         </p>
       </div>
 
@@ -125,21 +126,27 @@ export function ConfirmPage() {
       ) : (
         <form onSubmit={onSubmit} className="card-elevated space-y-5 p-6 sm:p-8">
           <div>
-            <label className="label">Текст подтверждения</label>
-            <textarea
-              className="input-field min-h-[120px] resize-y"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Например: подтверждаю оплату аренды за текущий период переводом на карту"
+            <label className="label">Квитанция об оплате (PDF)</label>
+            <input
+              type="file"
+              accept="application/pdf,.pdf"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm text-ink-700 file:mr-4 file:rounded-lg file:border-0 file:bg-brand-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100"
               required
             />
             <p className="mt-2 text-xs text-ink-500">
-              Упомяните оплату или перевод — так проще проверить корректность.
+              Электронная квитанция из банка (PDF с текстом, а не фото). Мы автоматически
+              проверим сумму и назначение платежа.
             </p>
+            {file && <p className="mt-1 text-xs font-medium text-ink-700">Выбран файл: {file.name}</p>}
           </div>
           {err && <AlertError>{err}</AlertError>}
-          <button type="submit" className="btn-primary w-full justify-center py-3">
-            Отправить подтверждение
+          <button
+            type="submit"
+            disabled={!file || submitting}
+            className="btn-primary w-full justify-center py-3 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {submitting ? "Проверяем квитанцию…" : "Отправить квитанцию"}
           </button>
         </form>
       )}

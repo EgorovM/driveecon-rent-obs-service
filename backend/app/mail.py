@@ -1,6 +1,9 @@
+import json
 import smtplib
 import socket
 import ssl
+import urllib.error
+import urllib.request
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -81,7 +84,50 @@ def _open_smtp():
     return smtp
 
 
+def _use_resend() -> bool:
+    """Выбор канала: явный resend, либо auto при наличии ключа."""
+    provider = (settings.mail_provider or "auto").lower()
+    if provider == "resend":
+        return True
+    if provider == "smtp":
+        return False
+    return bool(settings.resend_api_key)  # auto
+
+
+def _send_resend(to_addr: str, subject: str, body_text: str) -> None:
+    """Отправка через HTTP-API Resend (по 443 — не зависит от блокировки SMTP)."""
+    if not settings.resend_api_key:
+        raise RuntimeError("RESEND_API_KEY не задан в окружении")
+
+    payload = json.dumps(
+        {"from": settings.mail_from, "to": [to_addr], "subject": subject, "text": body_text}
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.resend.com/emails",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {settings.resend_api_key}",
+            "Content-Type": "application/json",
+            # Без User-Agent Cloudflare на стороне Resend отдаёт 403 (error 1010).
+            "User-Agent": "Drivee/1.0",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=settings.smtp_timeout) as resp:
+            resp.read()
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")
+        raise RuntimeError(f"Resend API {e.code}: {detail}") from e
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"Resend API недоступен: {e.reason}") from e
+
+
 def _send(to_addr: str, subject: str, body_text: str) -> None:
+    if _use_resend():
+        _send_resend(to_addr, subject, body_text)
+        return
+
     if not settings.smtp_user or not settings.smtp_pass:
         raise RuntimeError("SMTP_USER и SMTP_PASS не заданы в окружении")
 
