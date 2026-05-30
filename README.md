@@ -144,7 +144,8 @@ pytest -q
 | POST | `/api/properties/{id}/leases/upload` | завести аренду из `.txt` |
 | GET | `/api/properties/{id}/leases/{lid}/periods` | начисления по аренде |
 | POST | `/api/properties/{id}/leases/{lid}/periods/{pid}/payments` | внести оплату |
-| GET/POST | `/api/confirm/{token}` | подтверждение оплаты арендатором |
+| GET | `/api/confirm/{token}` | данные периода для страницы подтверждения |
+| POST | `/api/confirm/{token}` | подтверждение оплаты PDF-квитанцией (multipart, проверка LLM) |
 | POST | `/api/email/test/{tenant-reminder\|owner-paid\|owner-not-paid}` | тест писем |
 | POST | `/api/jobs/run-now` | ручной прогон проверок |
 | GET | `/api/health` | health-check |
